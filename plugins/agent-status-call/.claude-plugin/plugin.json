@@ -6,8 +6,8 @@
     "name": "Kieran Simpson",
     "email": "kierans777@gmail.com"
   },
-  "homepage": "https://github.com/kierans/agent-status-call",
-  "repository": "https://github.com/kierans/agent-status-call",
+  "homepage": "https://github.com/kierans/homers-drinking-bird/tree/main/plugins/agent-status-call",
+  "repository": "https://github.com/kierans/homers-drinking-bird",
   "license": "MIT",
   "keywords": [
     "statusline",

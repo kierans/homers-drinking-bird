@@ -1,6 +1,6 @@
 {
-  "name": "agent-status-call",
-  "description": "Custom Claude Code status line and subagent status line scripts.",
+  "name": "homers-drinking-bird",
+  "description": "Kieran Simpson's Claude Code plugins.",
   "owner": {
     "name": "Kieran Simpson",
     "email": "kierans777@gmail.com"
@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "agent-status-call",
-      "source": "./",
+      "source": "./plugins/agent-status-call",
       "description": "Custom Claude Code status line and subagent status line: context-window usage bar, git/hg branch, Claude.ai rate-limit windows, and per-subagent model/effort rows.",
       "version": "1.0.0"
     }
