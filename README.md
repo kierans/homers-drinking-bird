@@ -78,31 +78,35 @@ If the install summary says `Run /reload-plugins to activate.`, run:
 
 Verify it loaded with `/plugin list` or `claude plugin details agent-status-call@agent-status-call`.
 
-### Subagent status line
+### Subagent status line and main status line
 
-Wired up automatically: this plugin ships a `settings.json` with a
-`subagentStatusLine` default, which Claude Code applies once the plugin is
-installed and active. No further configuration needed.
+Wire both up yourself. A plugin's `settings.json` is schema-permitted to declare
+`subagentStatusLine` (and `agent`), but as of Claude Code 2.1.221 the effective-settings
+resolver that backs both `statusLine` and
+`subagentStatusLine` only merges `userSettings`, `projectSettings`,
+`localSettings`, `flagSettings`, and `policySettings` — plugin-contributed settings are
+validated on install but never folded into that merge. So despite passing schema validation, a
+plugin-declared `subagentStatusLine`
+is silently never read, and the hook never runs. Confirmed by instrumenting the script to log
+invocations and observing zero calls across a full subagent lifecycle. Until that's fixed
+upstream, both status lines need manual wiring in your own `settings.json`.
 
-### Main status line
-
-Claude Code plugins can't yet auto-wire the top-level `statusLine` setting —
-only `subagentStatusLine` and `agent` are supported in a plugin's
-`settings.json`, so wire this one up yourself.
-
-`/plugin install` puts the script at:
+`/plugin install` puts the scripts at:
 
 ```
 ~/.claude/plugins/cache/agent-status-call/agent-status-call/<version>/scripts/status-line.sh
+~/.claude/plugins/cache/agent-status-call/agent-status-call/<version>/scripts/subagent-status-line.sh
 ```
 
-`<version>` changes every time the plugin updates, so don't point
-`statusLine` straight at that path — point it at a symlink instead, and
-re-point the symlink after each update:
+`<version>` changes every time the plugin updates, so don't point either
+setting straight at that path — point at symlinks instead, and re-point them
+after each update:
 
 ```bash
 ln -sf ~/.claude/plugins/cache/agent-status-call/agent-status-call/1.0.0/scripts/status-line.sh \
   ~/.claude/scripts/status-line.sh
+ln -sf ~/.claude/plugins/cache/agent-status-call/agent-status-call/1.0.0/scripts/subagent-status-line.sh \
+  ~/.claude/scripts/subagent-status-line.sh
 ```
 
 ```json
@@ -110,6 +114,10 @@ ln -sf ~/.claude/plugins/cache/agent-status-call/agent-status-call/1.0.0/scripts
   "statusLine": {
     "type": "command",
     "command": "bash ~/.claude/scripts/status-line.sh"
+  },
+  "subagentStatusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/scripts/subagent-status-line.sh"
   }
 }
 ```
