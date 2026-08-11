@@ -7,9 +7,11 @@ script. See README.md for what each one renders and how to install/wire them.
 
 - Pure bash, no external runtime beyond `jq` (and `hg` if present, checked
   optionally). Don't introduce a language runtime or package manager for this.
-- `status-line.sh` targets macOS's BSD `date` (`date -j -u -f ...`), not GNU
-  date. If you need GNU-date-compatible parsing, branch on `date --version`
-  rather than replacing the BSD call.
+- `status-line.sh` supports both BSD `date` (macOS) and GNU `date` (Linux) for
+  timestamp parsing. Don't call `date -j`/`date -d` directly outside
+  `parse_timestamp_bsd`/`parse_timestamp_gnu` — add new date-parsing behavior to
+  both of those and let the `date --version` detection keep picking the right
+  one for `parse_timestamp`, rather than branching inline at each call site.
 - Both scripts read one JSON payload from stdin and must never write anything
   but the intended output to stdout — Claude Code renders stdout verbatim.
   Diagnostics, if any, go to stderr.

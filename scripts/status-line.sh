@@ -52,11 +52,18 @@
 # Timestamp parsing (resets_at):
 #   Three accepted shapes: ISO 8601 with a "Z" suffix, ISO 8601 with a "+HH:MM"
 #   offset, and a plain Unix epoch in seconds or milliseconds (13+ digits is treated
-#   as milliseconds). For the ISO forms, fractional seconds and any timezone suffix
-#   are stripped and the remaining local-looking timestamp is treated as UTC before
-#   being handed to BSD `date -j -u -f "%Y-%m-%dT%H:%M:%S"` (this script targets
-#   macOS's BSD date, not GNU date). Unparseable timestamps are treated as missing,
-#   which drops the countdown but keeps the bare percentage.
+#   as milliseconds). Unparseable timestamps are treated as missing, which drops the
+#   countdown but keeps the bare percentage.
+#
+#   This runs under both BSD date (macOS) and GNU date (Linux), which take the ISO
+#   forms differently — BSD's `-f` needs an exact format match with no timezone
+#   suffix, GNU's `-d` accepts the ISO string as-is. Rather than branch on every
+#   call, the script picks once at startup: `parse_timestamp_bsd` and
+#   `parse_timestamp_gnu` each implement the full parse for their flavor, and
+#   whichever one applies (detected via `date --version`, which GNU date supports
+#   and BSD date doesn't) is aliased to `parse_timestamp` as a wrapper function
+#   (see "OS detection" below). Everything downstream — `render_window`, in
+#   particular — calls plain `parse_timestamp` and never checks which OS it's on.
 #
 # Countdown rounding:
 #   Both windows round to the nearest unit rather than flooring, since flooring
@@ -77,22 +84,31 @@ jqr() {
   printf '%s' "$input" | jq -r "$1" 2>/dev/null
 }
 
-# Parses a resets_at value into a Unix epoch (seconds). Prints nothing and returns
-# non-zero if the value can't be parsed in any of the three accepted shapes.
-parse_timestamp() {
+# Converts a bare Unix epoch string (seconds, or milliseconds at 13+ digits) to
+# seconds. Returns 1 with no output if $1 isn't purely digits, so callers fall
+# through to their OS-specific ISO 8601 parsing. Shared by both parse_timestamp_*
+# functions below since this part doesn't touch `date` and has no OS split.
+epoch_from_numeric() {
+  local ts="$1"
+
+  [[ "$ts" =~ ^[0-9]+$ ]] || return 1
+
+  if [ "${#ts}" -ge 13 ]; then
+    echo $(( ts / 1000 ))
+  else
+    echo "$ts"
+  fi
+}
+
+# BSD date (macOS): -f requires an exact format match and rejects a trailing
+# timezone suffix outright, so the "Z" or "+HH:MM" offset and any fractional
+# seconds are stripped first and what's left is treated as a bare UTC timestamp.
+# Prints nothing and returns non-zero if $1 can't be parsed.
+parse_timestamp_bsd() {
   local ts="$1" epoch stripped
 
-  if [[ "$ts" =~ ^[0-9]+$ ]]; then
-    if [ "${#ts}" -ge 13 ]; then
-      echo $(( ts / 1000 ))
-    else
-      echo "$ts"
-    fi
-    return 0
-  fi
+  epoch_from_numeric "$ts" && return 0
 
-  # ISO 8601 (Z suffix or +HH:MM offset): drop fractional seconds and the timezone
-  # suffix, then treat what's left as a bare UTC timestamp.
   stripped=$(printf '%s' "$ts" | sed -E 's/\.[0-9]+//; s/(Z|[+-][0-9]{2}:?[0-9]{2})$//')
   epoch=$(date -j -u -f "%Y-%m-%dT%H:%M:%S" "$stripped" "+%s" 2>/dev/null)
   if [ -n "$epoch" ]; then
@@ -102,6 +118,34 @@ parse_timestamp() {
 
   return 1
 }
+
+# GNU date (Linux): -d parses ISO 8601 directly — "Z" suffix, "+HH:MM" offset, and
+# fractional seconds are all handled natively, so the string is passed through
+# unmodified. Prints nothing and returns non-zero if $1 can't be parsed.
+parse_timestamp_gnu() {
+  local ts="$1" epoch
+
+  epoch_from_numeric "$ts" && return 0
+
+  epoch=$(date -u -d "$ts" "+%s" 2>/dev/null)
+  if [ -n "$epoch" ]; then
+    echo "$epoch"
+    return 0
+  fi
+
+  return 1
+}
+
+# OS detection: GNU date supports --version (and prints "date (GNU coreutils)...");
+# BSD date treats it as a bad option and exits non-zero. Picked once at startup and
+# aliased to parse_timestamp as a wrapper function — a plain `alias` doesn't
+# reliably apply in non-interactive scripts, so a function is used instead. Every
+# caller below uses parse_timestamp and is unaware which OS it resolved to.
+if date --version >/dev/null 2>&1; then
+  parse_timestamp() { parse_timestamp_gnu "$@"; }
+else
+  parse_timestamp() { parse_timestamp_bsd "$@"; }
+fi
 
 # Formats a countdown in seconds as e.g. "3h" or "42m", rounded to the nearest unit.
 # mode is "5h" (minutes under 1h, else hours) or "7d" (hours under 1d, else days).

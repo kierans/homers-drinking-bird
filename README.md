@@ -50,7 +50,12 @@ in the panel get their own row:
 [Opus 5:high] · code-reviewer · Reviewing the diff for bugs · 12.4k tokens
 ```
 
-Both scripts require `jq`. `status-line.sh` targets macOS's BSD `date`.
+Both scripts require `jq`. `status-line.sh`'s rate-limit countdown works under
+both BSD `date` (macOS) and GNU `date` (Linux): it detects which one is on
+`PATH` via `date --version` (GNU supports the flag, BSD doesn't) and picks the
+matching parser, so the rest of the script never checks which OS it's on. See
+`scripts/status-line.sh`'s "Timestamp parsing" header comment for the exact
+mechanism.
 
 ## Installation
 
@@ -120,3 +125,41 @@ echo '{"model":{"display_name":"Opus"},"context_window":{"used_percentage":30},"
 echo '{"tasks":[{"id":"t1","model":"claude-opus-5","effort":"high","name":"code-reviewer","description":"Reviewing the diff for bugs","tokenCount":12400}]}' \
   | ./scripts/subagent-status-line.sh
 ```
+
+### Testing the rate-limit countdown on both date flavors
+
+`status-line.sh` picks `parse_timestamp_bsd` or `parse_timestamp_gnu` once at
+startup based on `date --version`. Exercise the countdown with all three
+accepted `resets_at` shapes — ISO with a `Z` suffix, ISO with a `+HH:MM`
+offset, and a plain epoch:
+
+Timestamps are computed relative to "now" so the countdown in the output
+actually matches, rather than hardcoding a date that goes stale:
+
+```bash
+Z_TS=$(date -u -v+3H +"%Y-%m-%dT%H:%M:%SZ")           # macOS date; use
+OFFSET_TS=$(date -u -v+2d +"%Y-%m-%dT%H:%M:%S+00:00")  # `date -u -d '+3 hours'
+                                                        # ...` etc. on Linux
+echo "{\"model\":{\"display_name\":\"Opus\"},\"context_window\":{\"used_percentage\":30},\"rate_limits\":{\"five_hour\":{\"used_percentage\":42,\"resets_at\":\"$Z_TS\"},\"seven_day\":{\"used_percentage\":18,\"resets_at\":\"$OFFSET_TS\"}}}" \
+  | ./scripts/status-line.sh
+# Opus [auto] | [███░░░░░░░] 30% | ⏱ 42% (in 3h) · 18% (in 2d)
+```
+
+That runs whichever parser matches your machine. To check the other flavor
+without switching OSes, shadow `date` on `PATH` with the other
+implementation and rerun the same command — this is how the two functions
+were actually verified while writing this script:
+
+```bash
+# On macOS, test the Linux path with GNU date (e.g. `brew install coreutils`
+# gives `gdate`):
+mkdir -p /tmp/fakebin && ln -sf "$(which gdate)" /tmp/fakebin/date
+FRAC_TS=$(date -u -v+45M +"%Y-%m-%dT%H:%M:%S.123Z")
+echo "{\"model\":{\"display_name\":\"Opus\"},\"context_window\":{\"used_percentage\":30},\"rate_limits\":{\"five_hour\":{\"used_percentage\":42,\"resets_at\":\"$FRAC_TS\"}}}" \
+  | PATH="/tmp/fakebin:$PATH" ./scripts/status-line.sh
+# Opus [auto] | [███░░░░░░░] 30% | ⏱ 42% (in 45m)
+```
+
+The reverse (testing BSD parsing from Linux) needs an actual BSD `date`
+binary — there's no equivalent single-package shortcut, since BSD date isn't
+packaged for Linux the way GNU coreutils is for macOS.
