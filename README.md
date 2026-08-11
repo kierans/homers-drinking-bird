@@ -163,3 +163,10 @@ echo "{\"model\":{\"display_name\":\"Opus\"},\"context_window\":{\"used_percenta
 The reverse (testing BSD parsing from Linux) needs an actual BSD `date`
 binary — there's no equivalent single-package shortcut, since BSD date isn't
 packaged for Linux the way GNU coreutils is for macOS.
+
+## Credits
+
+The idea for this plugin is based on
+[this lesson](https://www.agenticcoding.school/watch/47b9bab2) from
+[Agentic Coding School](https://www.agenticcoding.school/) 
+by [Ray Amjad](https://www.youtube.com/@RAmjad).
