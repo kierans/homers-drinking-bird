@@ -25,6 +25,9 @@ Then install any plugin listed below:
 ## Adding a plugin
 
 Each plugin lives under `plugins/<name>/` with its own
-`.claude-plugin/plugin.json`, `README.md`, and `CLAUDE.md`. Add a matching
-entry to the root `.claude-plugin/marketplace.json` pointing
-`source` at `./plugins/<name>`. See the root `CLAUDE.md` for details.
+`.claude-plugin/plugin.json`, `README.md`, and `CLAUDE.md`. 
+
+Add a matching entry to the root `.claude-plugin/marketplace.json` pointing
+`source` at `./plugins/<name>`. 
+
+See the root `CLAUDE.md` for details.
