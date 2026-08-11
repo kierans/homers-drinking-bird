@@ -4,6 +4,14 @@ A Claude Code plugin providing a custom status line and subagent status line:
 context-window usage, git/hg branch, Claude.ai rate-limit windows, and
 per-subagent model/effort rows in the agent panel.
 
+![Main status line and agent-panel row rendered by this plugin](status-line-example.png)
+
+The top two lines are `status-line.sh`'s output — model/effort, context usage,
+branch, and rate-limit countdown, plus Claude Code's own manual-mode/agent-count
+line beneath it. The `[Sonnet 5:auto] · Sleep for 10 seconds · 23.4k tokens` row
+below `main` is `subagent-status-line.sh`'s output — the subagent's resolved
+model/effort prepended to the panel's existing name/description/token-count row.
+
 ## What it does
 
 **`scripts/status-line.sh`** — renders the main status line:
