@@ -1,0 +1,19 @@
+{
+  "name": "agent-status-call",
+  "description": "Custom Claude Code status line and subagent status line: context-window usage bar, git/hg branch, Claude.ai rate-limit windows, and per-subagent model/effort rows.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Kieran Simpson",
+    "email": "kierans777@gmail.com"
+  },
+  "homepage": "https://github.com/kierans/agent-status-call",
+  "repository": "https://github.com/kierans/agent-status-call",
+  "license": "MIT",
+  "keywords": [
+    "statusline",
+    "status-line",
+    "subagent",
+    "context-window",
+    "rate-limits"
+  ]
+}
