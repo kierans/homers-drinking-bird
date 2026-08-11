@@ -1,6 +1,6 @@
 # homers-drinking-bird
 
-Kieran Simpson's Claude Code plugin marketplace.
+[Kieran Simpson's](https://github.com/kierans) Claude Code plugin marketplace.
 
 ## Installation
 

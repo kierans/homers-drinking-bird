@@ -1,8 +1,8 @@
 # homers-drinking-bird
 
-A Claude Code plugin marketplace owned by Kieran Simpson. The root
-`.claude-plugin/marketplace.json` lists every published plugin; each plugin
-lives in its own directory under `plugins/`.
+A Claude Code plugin marketplace owned by [Kieran Simpson](https://github.com/kierans). The root
+`.claude-plugin/marketplace.json` lists every published plugin; each plugin lives in its own
+directory under `plugins/`.
 
 ## Conventions
 
