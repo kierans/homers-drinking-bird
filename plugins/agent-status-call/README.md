@@ -32,9 +32,10 @@ Model [effort] | [██░░░░░░░░] 30% | branch | ⏱ 42% (in 3h)
   weekly allowance faster than a steady pace would allow.
 
 **`scripts/subagent-status-line.sh`** — overrides each row in the agent panel
-to add that subagent's own resolved model and effort in front of the
-existing `name · description · token count` row, instead of just the main
-session's model. Claude Code's default row for a running subagent looks like:
+to add that subagent's own resolved model, effort, status, and context-window
+usage in front of the existing `name · description · token count` row,
+instead of just the main session's model. Claude Code's default row for a
+running subagent looks like:
 
 ```
 code-reviewer · Reviewing the diff for bugs · 12.4k tokens
@@ -43,20 +44,33 @@ code-reviewer · Reviewing the diff for bugs · 12.4k tokens
 With this plugin active, the same row becomes:
 
 ```
-[Opus 5:high] · code-reviewer · Reviewing the diff for bugs · 12.4k tokens
+[Opus 5:high] · running · code-reviewer · Reviewing the diff for bugs · [░░░░░░░░░░] 6% (12.4k tokens)
 ```
 
 — prepending the model/effort that subagent is actually running on, which
 the main status line can't show you (it only ever sees the top-level
-session's model). `name`, `description`, and the token count are each
-omitted if the underlying field is absent, and `effort` defaults to `auto`
-when the subagent inherits the session's effort level. Different subagents
-in the panel get their own row:
+session's model), plus its status and a context-usage bar in the same style
+as `status-line.sh`'s. `status`, `name`, and `description` are each omitted
+if the underlying field is absent, and `effort` defaults to `auto` when the
+subagent inherits the session's effort level. The context-usage bar needs
+both `tokenCount` and `contextWindowSize`; when `contextWindowSize` is
+missing (Claude Code older than v2.1.205, or a task whose model isn't
+resolved yet) it falls back to a bare `12.4k tokens`, and is omitted
+entirely once `tokenCount` itself is absent. Different subagents in the
+panel get their own row:
 
 ```
-[Haiku 4.5:auto] · quick-check · Checking imports · 850 tokens
-[Opus 5:high] · code-reviewer · Reviewing the diff for bugs · 12.4k tokens
+[Haiku 4.5:auto] · completed · quick-check · Checking imports · 850 tokens
+[Opus 5:high] · running · code-reviewer · Reviewing the diff for bugs · [░░░░░░░░░░] 6% (12.4k tokens)
 ```
+
+**Minimum Claude Code version:** the docs don't state a minimum version for
+the `subagentStatusLine` setting itself or for the `name`/`description`/
+`tokenCount`/`status` task fields. Two fields do carry an explicit minimum:
+`model` and `contextWindowSize` require **Claude Code v2.1.205+**, and
+`effort` requires **Claude Code v2.1.214+**. Both are simply absent on older
+versions — which this script already falls back around (see above).
+([Source](https://code.claude.com/docs/en/statusline.md#subagent-status-lines))
 
 Both scripts require `jq`. `status-line.sh`'s rate-limit countdown works under
 both BSD `date` (macOS) and GNU `date` (Linux): it detects which one is on
@@ -135,7 +149,7 @@ Both scripts read a JSON payload from stdin. Test either one directly:
 echo '{"model":{"display_name":"Opus"},"context_window":{"used_percentage":30},"effort":{"level":"high"}}' \
   | ./scripts/status-line.sh
 
-echo '{"tasks":[{"id":"t1","model":"claude-opus-5","effort":"high","name":"code-reviewer","description":"Reviewing the diff for bugs","tokenCount":12400}]}' \
+echo '{"tasks":[{"id":"t1","model":"claude-opus-5","effort":"high","status":"running","name":"code-reviewer","description":"Reviewing the diff for bugs","tokenCount":12400,"contextWindowSize":200000}]}' \
   | ./scripts/subagent-status-line.sh
 ```
 

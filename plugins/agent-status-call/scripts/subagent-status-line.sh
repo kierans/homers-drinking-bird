@@ -12,16 +12,30 @@
 # for keep Claude Code's default row rendering.
 #
 # Row shape:
-#   [Model:effort] · name · description · tokenCount tokens
+#   [Model:effort] · status · name · description · [██░░░░░░░░] 6% (12.4k tokens)
 #
 # - [Model:effort] - .model prettified (see prettify_model below), and .effort,
 #   defaulting to "auto" when absent (task inherits the session's effort level, or
 #   the field predates Claude Code v2.1.214). Always shown.
+# - status         - .status, tostring. Omitted when absent.
 # - name           - .name. Omitted when absent.
 # - description    - .description. Omitted when absent.
-# - tokenCount      - .tokenCount, formatted as "12.4k tokens" above 1000 (one
-#   decimal place, floored) or a bare count below. Omitted when absent, e.g. for a
-#   task whose model isn't resolved yet.
+# - context/tokens - built from .tokenCount and .contextWindowSize (both require
+#   Claude Code v2.1.205 or later; contextWindowSize is that task's model's context
+#   window in tokens):
+#     - both present and contextWindowSize > 0: a 10-block usage bar (same style as
+#       status-line.sh's context bar) plus the percentage (tokenCount /
+#       contextWindowSize, rounded to the nearest integer, clamped to 0-100),
+#       followed by the token count in parentheses, e.g.
+#       "[░░░░░░░░░░] 6% (12.4k tokens)" (bar fill is floor(pct / 10), so
+#       percentages under 10% show no filled blocks).
+#     - tokenCount present but contextWindowSize missing or non-positive (e.g.
+#       Claude Code older than v2.1.205): falls back to the bare "12.4k tokens"
+#       form.
+#     - tokenCount absent (task's model isn't resolved yet): segment omitted
+#       entirely.
+#   Token counts are formatted as "12.4k tokens" above 1000 (one decimal place,
+#   floored) or a bare count below.
 #
 # Example input (stdin):
 #   {
@@ -30,15 +44,17 @@
 #         "id": "t1",
 #         "model": "claude-opus-5",
 #         "effort": "high",
+#         "status": "running",
 #         "name": "code-reviewer",
 #         "description": "Reviewing the diff for bugs",
-#         "tokenCount": 12400
+#         "tokenCount": 12400,
+#         "contextWindowSize": 200000
 #       }
 #     ]
 #   }
 #
 # Example output (stdout, one JSON line per task):
-#   {"id":"t1","content":"[Opus 5:high] · code-reviewer · Reviewing the diff for bugs · 12.4k tokens"}
+#   {"id":"t1","content":"[Opus 5:high] · running · code-reviewer · Reviewing the diff for bugs · [░░░░░░░░░░] 6% (12.4k tokens)"}
 
 input=$(cat)
 
@@ -71,15 +87,31 @@ printf '%s' "$input" | jq -c '
       (. | tostring)
     end;
 
+  def context_segment(tokenCount; contextWindowSize):
+    if tokenCount == null then null
+    elif contextWindowSize == null or contextWindowSize <= 0 then
+      (tokenCount | format_tokens) + " tokens"
+    else
+      ((tokenCount / contextWindowSize * 100) + 0.5 | floor) as $raw
+      | (if $raw < 0 then 0 elif $raw > 100 then 100 else $raw end) as $pct
+      | ($pct / 10 | floor) as $filled
+      | (10 - $filled) as $empty
+      | ((if $filled > 0 then "█" * $filled else "" end) + (if $empty > 0 then "░" * $empty else "" end)) as $bar
+      | "[" + $bar + "] " + ($pct | tostring) + "% (" + (tokenCount | format_tokens) + " tokens)"
+    end;
+
   .tasks[]?
   | select(.id != null)
+  | . as $t
+  | context_segment($t.tokenCount; $t.contextWindowSize) as $ctx
   | {
-      id: .id,
+      id: $t.id,
       content: (
-        "[" + (.model | prettify_model) + ":" + ((.effort // "auto") | tostring) + "]"
-        + (if .name then " · " + .name else "" end)
-        + (if .description then " · " + .description else "" end)
-        + (if .tokenCount then " · " + (.tokenCount | format_tokens) + " tokens" else "" end)
+        "[" + ($t.model | prettify_model) + ":" + (($t.effort // "auto") | tostring) + "]"
+        + (if $t.status then " · " + ($t.status | tostring) else "" end)
+        + (if $t.name then " · " + $t.name else "" end)
+        + (if $t.description then " · " + $t.description else "" end)
+        + (if $ctx then " · " + $ctx else "" end)
       )
     }
 '
