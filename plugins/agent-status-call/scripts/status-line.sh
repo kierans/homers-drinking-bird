@@ -70,6 +70,26 @@
 #   would show "in 1d" for a reset that's actually 41h away. The 5-hour window
 #   counts down in minutes under 1h, hours otherwise. The 7-day window counts down
 #   in hours under 1d, days otherwise.
+#
+# Colour:
+#   16-colour (4-bit) ANSI codes only, never 256-colour or truecolor. Model is
+#   cyan (36), effort is dim cyan (2;36), branch is green (32). Every percentage
+#   — context, 5-hour, 7-day — carries a severity ramp: green (32) under 50%,
+#   yellow (33) at 50-79%, red (31) at 80% and over. The context bar's filled
+#   run and the percentage beside it always share the same ramp colour; the
+#   "--%" placeholder shown when used_percentage is absent is dim (2), not
+#   ramped, since there is no load to report. The 7-day pace-overrun "!" is
+#   always red (31), independent of the percentage's own ramp colour — at 61%
+#   on day 2 the figure is yellow (under 80%) while the trailing "!" is red
+#   (ahead of the daily budget); folding the two into one colour would lose one
+#   of the two facts. Brackets, "|", "·", "⏱", and countdowns are dim (2)
+#   chrome. `90`-`97` (bright) and `1;3x` (bold+colour) are deliberately never
+#   used: on Solarized Dark, ANSI 8 is the theme's own background (bright
+#   separators vanish), and bold-as-bright terminals remap Solarized's bright
+#   green/cyan onto grey and bright red onto orange (a bold model name reads
+#   grey, not cyan). `NO_COLOR` (https://no-color.org, any non-empty value, not
+#   just "1") disables colour entirely; with it set, this script emits exactly
+#   the bytes it emitted before colour was added.
 
 set -uo pipefail
 
@@ -78,10 +98,45 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
+# NO_COLOR (https://no-color.org): any non-empty value disables colour, so the
+# test is emptiness, never a string comparison against "1" or similar.
+if [ -n "${NO_COLOR:-}" ]; then
+  USE_COLOUR=0
+else
+  USE_COLOUR=1
+fi
+
 input=$(cat)
 
 jqr() {
   printf '%s' "$input" | jq -r "$1" 2>/dev/null
+}
+
+# Wraps TEXT in the given SGR CODE, resetting after. A no-op when colour is off
+# or TEXT is empty — painting an empty string would otherwise produce a
+# non-empty run of bare escapes, turning an absent segment into a rendered one.
+paint() {
+  local code="$1" text="$2"
+
+  if [ "$USE_COLOUR" = "1" ] && [ -n "$text" ]; then
+    printf '\033[%sm%s\033[0m' "$code" "$text"
+  else
+    printf '%s' "$text"
+  fi
+}
+
+# The severity ramp shared by every percentage this script renders: green under
+# 50%, yellow 50-79%, red 80% and over.
+pct_colour() {
+  local pct="$1"
+
+  if [ "$pct" -ge 80 ]; then
+    echo "31"
+  elif [ "$pct" -ge 50 ]; then
+    echo "33"
+  else
+    echo "32"
+  fi
 }
 
 # Converts a bare Unix epoch string (seconds, or milliseconds at 13+ digits) to
@@ -182,8 +237,8 @@ render_window() {
 
   [ -z "$pct" ] && return 0
 
-  pct_int=$(awk -v p="$pct" 'BEGIN { printf "%.0f", p }')
-  out="${pct_int}%"
+  pct_int=$(round_pct "$pct")
+  out=$(paint "$(pct_colour "$pct_int")" "${pct_int}%")
 
   if [ -n "$reset" ]; then
     if epoch=$(parse_timestamp "$reset"); then
@@ -199,11 +254,11 @@ render_window() {
           cap = (day >= 7) ? 100 : day * 14.25
           print (p > cap) ? 1 : 0
         }')
-        [ "$exceeded" = "1" ] && out="${out}!"
+        [ "$exceeded" = "1" ] && out="${out}$(paint "31" "!")"
       fi
 
       [ "$diff" -lt 0 ] && diff=0
-      out="${out} (in $(format_countdown "$diff" "$mode"))"
+      out="${out} $(paint "2" "(in $(format_countdown "$diff" "$mode"))")"
     fi
   fi
 
@@ -218,30 +273,34 @@ round_pct() {
 
 # Renders a 10-block usage bar for an integer percentage (0-100), e.g.
 # "[███░░░░░░░]" (bar fill is floor(pct / 10), so percentages under 10% show no
-# filled blocks).
+# filled blocks). The fill takes the severity ramp colour, the empty run and
+# brackets are dim chrome. A pct of 0 (the "no data" placeholder) naturally
+# paints nothing but dim, since the fill run is empty.
 render_bar() {
   local pct="$1" filled empty bar
 
   filled=$(( pct * 10 / 100 ))
   empty=$(( 10 - filled ))
   bar=""
-  [ "$filled" -gt 0 ] && bar="$(printf '█%.0s' $(seq 1 "$filled"))"
-  [ "$empty" -gt 0 ] && bar="${bar}$(printf '░%.0s' $(seq 1 "$empty"))"
-  echo "[${bar}]"
+  [ "$filled" -gt 0 ] && bar="$(paint "$(pct_colour "$pct")" "$(printf '█%.0s' $(seq 1 "$filled"))")"
+  [ "$empty" -gt 0 ] && bar="${bar}$(paint "2" "$(printf '░%.0s' $(seq 1 "$empty"))")"
+  echo "$(paint "2" "[")${bar}$(paint "2" "]")"
 }
 
 # Joins the non-empty arguments after SEP with SEP, dropping empty ones — so a
-# missing segment doesn't leave a stray separator behind.
+# missing segment doesn't leave a stray separator behind. The separator is
+# painted dim chrome once, here, rather than at every call site.
 join_by() {
-  local sep="$1" out="" part
+  local sep="$1" painted_sep out="" part
   shift
+  painted_sep=$(paint "2" "$sep")
 
   for part in "$@"; do
     [ -z "$part" ] && continue
     if [ -z "$out" ]; then
       out="$part"
     else
-      out="${out}${sep}${part}"
+      out="${out}${painted_sep}${part}"
     fi
   done
 
@@ -283,19 +342,20 @@ detect_branch() {
 
 MODEL=$(jqr '.model.display_name // .model.id // "Unknown"')
 EFFORT=$(jqr '.effort.level // "auto"')
+MODEL_SEGMENT="$(paint "36" "$MODEL") $(paint "2" "[")$(paint "2;36" "$EFFORT")$(paint "2" "]")"
 
 # --- Segment 2: context battery ---
 
 CTX_PCT_RAW=$(jqr '.context_window.used_percentage // empty')
 
 if [ -z "$CTX_PCT_RAW" ]; then
-  CTX_SEGMENT="$(render_bar 0) --%"
+  CTX_SEGMENT="$(render_bar 0) $(paint "2" "--%")"
 else
   CTX_PCT=$(round_pct "$CTX_PCT_RAW")
   [ "$CTX_PCT" -lt 0 ] && CTX_PCT=0
   [ "$CTX_PCT" -gt 100 ] && CTX_PCT=100
 
-  CTX_SEGMENT="$(render_bar "$CTX_PCT") ${CTX_PCT}%"
+  CTX_SEGMENT="$(render_bar "$CTX_PCT") $(paint "$(pct_colour "$CTX_PCT")" "${CTX_PCT}%")"
 fi
 
 # --- Segment 3: git/hg branch ---
@@ -304,7 +364,7 @@ CWD=$(jqr '.cwd // .workspace.current_dir // empty')
 GIT_SEGMENT=""
 
 if [ -n "$CWD" ] && [ -d "$CWD" ]; then
-  GIT_SEGMENT=$(detect_branch "$CWD")
+  GIT_SEGMENT=$(paint "32" "$(detect_branch "$CWD")")
 fi
 
 # --- Segment 4: Claude.ai rate limits ---
@@ -319,10 +379,10 @@ SEVEN_DAY_RENDERED=$(render_window "$SEVEN_DAY_PCT" "$SEVEN_DAY_RESET" "7d")
 
 RATE_JOINED=$(join_by " · " "$FIVE_HOUR_RENDERED" "$SEVEN_DAY_RENDERED")
 RATE_SEGMENT=""
-[ -n "$RATE_JOINED" ] && RATE_SEGMENT="⏱ ${RATE_JOINED}"
+[ -n "$RATE_JOINED" ] && RATE_SEGMENT="$(paint "2" "⏱") ${RATE_JOINED}"
 
 # --- Composition ---
 
-OUTPUT=$(join_by " | " "${MODEL} [${EFFORT}]" "$CTX_SEGMENT" "$GIT_SEGMENT" "$RATE_SEGMENT")
+OUTPUT=$(join_by " | " "$MODEL_SEGMENT" "$CTX_SEGMENT" "$GIT_SEGMENT" "$RATE_SEGMENT")
 
 echo "$OUTPUT"
