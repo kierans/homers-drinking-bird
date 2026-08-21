@@ -37,6 +37,30 @@
 #   Token counts are formatted as "12.4k tokens" above 1000 (one decimal place,
 #   floored) or a bare count below.
 #
+# Colour:
+#   16-colour (4-bit) ANSI codes only, never 256-colour or truecolor — same
+#   rule as status-line.sh, chosen independently since the two scripts don't
+#   share an implementation. Model is cyan (36), effort is dim cyan (2;36),
+#   name is bold with no colour (1), status is green (32), description is dim
+#   (2). The context bar and its percentage carry the severity ramp: green
+#   (32) under 50%, yellow (33) at 50-79%, red (31) at 80% and over, with the
+#   bar's filled run and the percentage sharing the same ramp colour.
+#   Brackets, ":", "·", and the token count are dim (2) chrome. NO_COLOR
+#   (https://no-color.org, any non-empty value, not just "1") disables colour
+#   entirely; with it set, this script emits exactly the bytes it emitted
+#   before colour was added.
+#
+#   The row text is embedded inside a JSON string, so the escapes are built by
+#   the jq program itself (an ANSI escape control byte opening a "[" + code +
+#   "m" span, closed the same way), and the colour flag is passed in as
+#   --argjson colour (0 or 1, from NO_COLOR) rather than read from an
+#   environment variable inside jq. Verified that jq -c re-encodes the
+#   embedded escape byte as a valid \u sequence in its JSON output, and that
+#   decoding that string back out (jq -r .content) yields the real escape byte
+#   again. Whether Claude Code's own decode matches was not directly
+#   observable, but the subagent status line docs state that `content` "is
+#   rendered as-is, including ANSI colors and OSC 8 hyperlinks".
+#
 # Example input (stdin):
 #   {
 #     "tasks": [
@@ -60,7 +84,16 @@ input=$(cat)
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-printf '%s' "$input" | jq -c '
+# NO_COLOR (https://no-color.org): any non-empty value disables colour, so the
+# test is emptiness, never a string comparison against "1" or similar. Passed
+# into jq as --argjson since the row text is built entirely inside the program.
+if [ -n "${NO_COLOR:-}" ]; then
+  USE_COLOUR=0
+else
+  USE_COLOUR=1
+fi
+
+printf '%s' "$input" | jq -c --argjson colour "$USE_COLOUR" '
   def prettify_model:
     if . == null or . == "" then "unknown"
     else
@@ -87,31 +120,55 @@ printf '%s' "$input" | jq -c '
       (. | tostring)
     end;
 
+  # Wraps $s in the given SGR $c, resetting after. A no-op when colour is off or
+  # $s is empty/null — painting an empty string would otherwise produce a
+  # non-empty run of bare escapes, turning an absent segment into a rendered
+  # one. This is also what makes "█" * 0 safe: it is null on jq 1.6 and "" on
+  # jq 1.7+, and paint treats both the same.
+  def paint($c; $s):
+    ($s // "") as $t
+    | if $colour == 1 and $t != "" then "[" + $c + "m" + $t + "[0m" else $t end;
+
+  # The severity ramp shared by every percentage this script renders: green
+  # under 50%, yellow 50-79%, red 80% and over.
+  def pct_colour($p):
+    if $p >= 80 then "31" elif $p >= 50 then "33" else "32" end;
+
+  # A 10-block usage bar for an integer percentage (0-100). The fill takes the
+  # severity ramp colour, the empty run is dim chrome.
+  def bar($pct):
+    ($pct / 10 | floor) as $filled
+    | paint(pct_colour($pct); "█" * $filled) + paint("2"; "░" * (10 - $filled));
+
   def context_segment(tokenCount; contextWindowSize):
     if tokenCount == null then null
     elif contextWindowSize == null or contextWindowSize <= 0 then
-      (tokenCount | format_tokens) + " tokens"
+      paint("2"; (tokenCount | format_tokens) + " tokens")
     else
       ((tokenCount / contextWindowSize * 100) + 0.5 | floor) as $raw
       | (if $raw < 0 then 0 elif $raw > 100 then 100 else $raw end) as $pct
-      | ($pct / 10 | floor) as $filled
-      | (10 - $filled) as $empty
-      | ((if $filled > 0 then "█" * $filled else "" end) + (if $empty > 0 then "░" * $empty else "" end)) as $bar
-      | "[" + $bar + "] " + ($pct | tostring) + "% (" + (tokenCount | format_tokens) + " tokens)"
+      | paint("2"; "[") + bar($pct) + paint("2"; "] ")
+        + paint(pct_colour($pct); ($pct | tostring) + "%")
+        + paint("2"; " (" + (tokenCount | format_tokens) + " tokens)")
     end;
 
   .tasks[]?
   | select(.id != null)
   | . as $t
   | context_segment($t.tokenCount; $t.contextWindowSize) as $ctx
+  | (
+      paint("2"; "[") + paint("36"; $t.model | prettify_model) + paint("2"; ":")
+      + paint("2;36"; ($t.effort // "auto") | tostring) + paint("2"; "]")
+    ) as $header
+  | (if $t.status then paint("32"; $t.status | tostring) else null end) as $status
+  | (if $t.name then paint("1"; $t.name) else null end) as $name
+  | (if $t.description then paint("2"; $t.description) else null end) as $description
   | {
       id: $t.id,
       content: (
-        "[" + ($t.model | prettify_model) + ":" + (($t.effort // "auto") | tostring) + "]"
-        + (if $t.status then " · " + ($t.status | tostring) else "" end)
-        + (if $t.name then " · " + $t.name else "" end)
-        + (if $t.description then " · " + $t.description else "" end)
-        + (if $ctx then " · " + $ctx else "" end)
+        [$header, $status, $name, $description, $ctx]
+        | map(select(. != null and . != ""))
+        | join(paint("2"; " · "))
       )
     }
 '
