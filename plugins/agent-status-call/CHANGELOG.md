@@ -5,6 +5,17 @@ All notable changes to this plugin are documented in this file.
 The format is based on [Keep a Changelog][1], and this project adheres to
 [Semantic Versioning][2].
 
+## [1.1.1] - 2026-08-21
+
+### Documentation
+
+- Added this `CHANGELOG.md`, tracking notable changes to the plugin release
+  by release, following Keep a Changelog.
+- README describes each status line's fields in general terms (model/effort,
+  status, context usage, name, description, token count) instead of walking
+  through one specific example, and refreshes the example screenshot to
+  match.
+
 ## [1.1.0] - 2026-08-15
 
 ### Added
