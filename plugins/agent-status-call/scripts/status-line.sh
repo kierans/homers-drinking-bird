@@ -210,6 +210,75 @@ render_window() {
   echo "$out"
 }
 
+# Rounds a percentage string to the nearest integer, half rounding up (0.5 -> 1,
+# not 0) to match the context-window path's existing behavior.
+round_pct() {
+  awk -v p="$1" 'BEGIN { printf "%d", int(p + 0.5) }'
+}
+
+# Renders a 10-block usage bar for an integer percentage (0-100), e.g.
+# "[███░░░░░░░]" (bar fill is floor(pct / 10), so percentages under 10% show no
+# filled blocks).
+render_bar() {
+  local pct="$1" filled empty bar
+
+  filled=$(( pct * 10 / 100 ))
+  empty=$(( 10 - filled ))
+  bar=""
+  [ "$filled" -gt 0 ] && bar="$(printf '█%.0s' $(seq 1 "$filled"))"
+  [ "$empty" -gt 0 ] && bar="${bar}$(printf '░%.0s' $(seq 1 "$empty"))"
+  echo "[${bar}]"
+}
+
+# Joins the non-empty arguments after SEP with SEP, dropping empty ones — so a
+# missing segment doesn't leave a stray separator behind.
+join_by() {
+  local sep="$1" out="" part
+  shift
+
+  for part in "$@"; do
+    [ -z "$part" ] && continue
+    if [ -z "$out" ]; then
+      out="$part"
+    else
+      out="${out}${sep}${part}"
+    fi
+  done
+
+  echo "$out"
+}
+
+# Walks up from CWD looking for a .hg or .git marker and asks only that VCS for
+# a branch/bookmark — stops at the first marker found, so a directory nested in
+# both (which doesn't occur in practice) is never arbitrated between them. This
+# avoids spawning hg in every directory, including git repos and non-repos,
+# where it always failed after ~0.34s.
+detect_branch() {
+  local cwd="$1" dir="$1" vcs=""
+
+  while :; do
+    if [ -e "$dir/.hg" ]; then
+      vcs="hg"
+      break
+    elif [ -e "$dir/.git" ]; then
+      vcs="git"
+      break
+    elif [ "$dir" = "/" ]; then
+      break
+    fi
+    dir=$(dirname "$dir")
+  done
+
+  case "$vcs" in
+    hg)
+      command -v hg >/dev/null 2>&1 && hg --cwd "$cwd" activebookmark 2>/dev/null
+      ;;
+    git)
+      git --no-optional-locks -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null
+      ;;
+  esac
+}
+
 # --- Segment 1: model ---
 
 MODEL=$(jqr '.model.display_name // .model.id // "Unknown"')
@@ -220,18 +289,13 @@ EFFORT=$(jqr '.effort.level // "auto"')
 CTX_PCT_RAW=$(jqr '.context_window.used_percentage // empty')
 
 if [ -z "$CTX_PCT_RAW" ]; then
-  CTX_SEGMENT="[░░░░░░░░░░] --%"
+  CTX_SEGMENT="$(render_bar 0) --%"
 else
-  CTX_PCT=$(jqr '.context_window.used_percentage | (. + 0.5 | floor)')
+  CTX_PCT=$(round_pct "$CTX_PCT_RAW")
   [ "$CTX_PCT" -lt 0 ] && CTX_PCT=0
   [ "$CTX_PCT" -gt 100 ] && CTX_PCT=100
 
-  FILLED=$(( CTX_PCT * 10 / 100 ))
-  EMPTY=$(( 10 - FILLED ))
-  BAR=""
-  [ "$FILLED" -gt 0 ] && BAR="$(printf '█%.0s' $(seq 1 "$FILLED"))"
-  [ "$EMPTY" -gt 0 ] && BAR="${BAR}$(printf '░%.0s' $(seq 1 "$EMPTY"))"
-  CTX_SEGMENT="[${BAR}] ${CTX_PCT}%"
+  CTX_SEGMENT="$(render_bar "$CTX_PCT") ${CTX_PCT}%"
 fi
 
 # --- Segment 3: git/hg branch ---
@@ -240,13 +304,7 @@ CWD=$(jqr '.cwd // .workspace.current_dir // empty')
 GIT_SEGMENT=""
 
 if [ -n "$CWD" ] && [ -d "$CWD" ]; then
-  if git --no-optional-locks -C "$CWD" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    GIT_SEGMENT=$(git --no-optional-locks -C "$CWD" rev-parse --abbrev-ref HEAD 2>/dev/null)
-  fi
-
-  if command -v hg >/dev/null 2>&1 && hg --cwd "$CWD" root >/dev/null 2>&1; then
-    GIT_SEGMENT=$(hg --cwd "$CWD" activebookmark 2>/dev/null)
-  fi
+  GIT_SEGMENT=$(detect_branch "$CWD")
 fi
 
 # --- Segment 4: Claude.ai rate limits ---
@@ -259,23 +317,12 @@ SEVEN_DAY_RESET=$(jqr '(.rate_limits.seven_day // .rate_limits.sevenDay // {}) |
 FIVE_HOUR_RENDERED=$(render_window "$FIVE_HOUR_PCT" "$FIVE_HOUR_RESET" "5h")
 SEVEN_DAY_RENDERED=$(render_window "$SEVEN_DAY_PCT" "$SEVEN_DAY_RESET" "7d")
 
+RATE_JOINED=$(join_by " · " "$FIVE_HOUR_RENDERED" "$SEVEN_DAY_RENDERED")
 RATE_SEGMENT=""
-if [ -n "$FIVE_HOUR_RENDERED" ] || [ -n "$SEVEN_DAY_RENDERED" ]; then
-  RATE_JOINED="$FIVE_HOUR_RENDERED"
-  if [ -n "$SEVEN_DAY_RENDERED" ]; then
-    if [ -n "$RATE_JOINED" ]; then
-      RATE_JOINED="${RATE_JOINED} · ${SEVEN_DAY_RENDERED}"
-    else
-      RATE_JOINED="$SEVEN_DAY_RENDERED"
-    fi
-  fi
-  RATE_SEGMENT="⏱ ${RATE_JOINED}"
-fi
+[ -n "$RATE_JOINED" ] && RATE_SEGMENT="⏱ ${RATE_JOINED}"
 
 # --- Composition ---
 
-OUTPUT="${MODEL} [${EFFORT}] | ${CTX_SEGMENT}"
-[ -n "$GIT_SEGMENT" ] && OUTPUT="${OUTPUT} | ${GIT_SEGMENT}"
-[ -n "$RATE_SEGMENT" ] && OUTPUT="${OUTPUT} | ${RATE_SEGMENT}"
+OUTPUT=$(join_by " | " "${MODEL} [${EFFORT}]" "$CTX_SEGMENT" "$GIT_SEGMENT" "$RATE_SEGMENT")
 
 echo "$OUTPUT"
