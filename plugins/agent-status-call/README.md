@@ -6,11 +6,12 @@ per-subagent model/effort rows in the agent panel.
 
 ![Main status line and agent-panel row rendered by this plugin](status-line-example.png)
 
-The top two lines are `status-line.sh`'s output — model/effort, context usage,
-branch, and rate-limit countdown, plus Claude Code's own manual-mode/agent-count
-line beneath it. The `[Sonnet 5:auto] · Sleep for 10 seconds · 23.4k tokens` row
-below `main` is `subagent-status-line.sh`'s output — the subagent's resolved
-model/effort prepended to the panel's existing name/description/token-count row.
+The status line (`status-line.sh`) is a combination of model/effort, context
+usage, branch, and rate-limit countdown.
+
+Each subagent has a status line from (`subagent-status-line.sh`) being a
+combination of the subagent's resolved model/effort, status, name, description,
+context usage, and token-count.
 
 ## What it does
 
@@ -33,9 +34,8 @@ Model [effort] | [██░░░░░░░░] 30% | branch | ⏱ 42% (in 3h)
 
 **`scripts/subagent-status-line.sh`** — overrides each row in the agent panel
 to add that subagent's own resolved model, effort, status, and context-window
-usage in front of the existing `name · description · token count` row,
-instead of just the main session's model. Claude Code's default row for a
-running subagent looks like:
+usage along with the name, description and token count. Claude Code's default
+row for a running subagent looks like:
 
 ```
 code-reviewer · Reviewing the diff for bugs · 12.4k tokens
