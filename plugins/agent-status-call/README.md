@@ -72,6 +72,27 @@ the `subagentStatusLine` setting itself or for the `name`/`description`/
 versions — which this script already falls back around (see above).
 ([Source](https://code.claude.com/docs/en/statusline.md#subagent-status-lines))
 
+### Colour
+
+Both status lines colour their output. Model is cyan, effort is dim cyan, and
+every percentage — the context bar (both scripts), the 5-hour and 7-day
+windows, and the subagent context bar — carries a severity ramp:
+
+| Load         | Colour |
+|--------------|--------|
+| under 50%    | green  |
+| 50-79%       | yellow |
+| 80% and over | red    |
+
+The main line's branch is green; the subagent panel's name is bold, its
+status is green, and its description is dim. Chrome — brackets, separators,
+the `⏱` glyph, countdowns, and token counts — is dim throughout. Colour uses
+16-colour (4-bit) ANSI codes only, chosen so it stays legible across terminal
+themes without needing truecolor support.
+
+Set [`NO_COLOR`][1] to any non-empty value to disable colour in both scripts;
+with it set, each script's output is byte-identical to its plain-text form.
+
 Both scripts require `jq`. `status-line.sh`'s rate-limit countdown works under
 both BSD `date` (macOS) and GNU `date` (Linux): it detects which one is on
 `PATH` via `date --version` (GNU supports the flag, BSD doesn't) and picks the
@@ -153,6 +174,28 @@ echo '{"tasks":[{"id":"t1","model":"claude-opus-5","effort":"high","status":"run
   | ./scripts/subagent-status-line.sh
 ```
 
+### Testing colour
+
+Confirm `NO_COLOR` strips every escape and each script's output is otherwise
+unchanged:
+
+```bash
+echo '{"model":{"display_name":"Opus"},"context_window":{"used_percentage":30}}' \
+  | NO_COLOR=1 ./scripts/status-line.sh | cat -v
+# no ^[ sequences in the output
+
+echo '{"tasks":[{"id":"t1","model":"claude-opus-5","tokenCount":12400,"contextWindowSize":200000}]}' \
+  | NO_COLOR=1 ./scripts/subagent-status-line.sh | cat -v
+```
+
+`subagent-status-line.sh`'s row text sits inside a JSON string, so also
+confirm the coloured output stays valid JSON:
+
+```bash
+echo '{"tasks":[{"id":"t1","model":"claude-opus-5","tokenCount":12400,"contextWindowSize":200000}]}' \
+  | ./scripts/subagent-status-line.sh | jq -e . >/dev/null && echo "valid JSON"
+```
+
 ### Testing the rate-limit countdown on both date flavors
 
 `status-line.sh` picks `parse_timestamp_bsd` or `parse_timestamp_gnu` once at
@@ -197,3 +240,5 @@ The idea for this plugin is based on
 [this lesson](https://www.agenticcoding.school/watch/47b9bab2) from
 [Agentic Coding School](https://www.agenticcoding.school/) 
 by [Ray Amjad](https://www.youtube.com/@RAmjad).
+
+[1]: https://no-color.org
