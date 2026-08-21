@@ -27,6 +27,41 @@ script. See README.md for what each one renders and how to install/wire them.
   README.md's Testing section) rather than reloading Claude Code between
   every edit.
 
+## Claude Code inputs and outputs are never assumed
+
+Both scripts sit on a contract owned by Claude Code: the JSON each one receives
+on stdin, and how Claude Code renders what each one prints. Neither half of
+that contract may be reasoned about from memory, from what the current code
+appears to do, or from the other script. Check it against the status line
+documentation first — [`statusLine` and `subagentStatusLine` are both covered
+there][1] — and only then write the change.
+
+This applies to, at least:
+
+- field names, including whether a field is snake_case or camelCase;
+- whether a field is guaranteed present, and the minimum Claude Code version
+  that introduced it;
+- what each payload actually contains — the two are different objects, and the
+  subagent payload's per-task fields are not the session's fields;
+- how stdout is rendered: ANSI escapes, OSC 8 links, truncation, and how the
+  usable width is determined;
+- the row-override protocol for subagent rows.
+
+Then:
+
+- **If the docs answer it**, record the answer in that script's header comment
+  block, so the next edit inherits the finding instead of re-deriving it.
+- **If the docs don't answer it**, test it against a running Claude Code
+  session and write down what was observed, how, and the version it was
+  observed on. The README's note on plugin-declared `subagentStatusLine` never
+  being read is the model: it states the test, the method, and the version.
+- **If it can be neither validated nor observed**, don't make the change that
+  depends on it. A plausible-looking guess about someone else's contract is the
+  one kind of change this plugin should not ship.
+- **Never carry a finding across from the other script.** The two consume
+  different inputs and are rendered by different surfaces; a resemblance
+  between them proves nothing about either.
+
 ## Updating the changelog
 
 When asked to update or generate `CHANGELOG.md` for a version bump:
@@ -53,3 +88,5 @@ When asked to update or generate `CHANGELOG.md` for a version bump:
   newest version first, `## [x.y.z] - YYYY-MM-DD` headings using the date
   of the version-bump commit, reference-style links for the format/semver
   footnotes.
+
+[1]: https://code.claude.com/docs/en/statusline
