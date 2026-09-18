@@ -7,10 +7,10 @@ directory under `plugins/`.
 ## Conventions
 
 - Each plugin is self-contained under `plugins/<plugin-name>/`: its own
-  `.claude-plugin/plugin.json`, its own `README.md`, and its own `CLAUDE.md`
-  for language/tool-specific conventions. This root `CLAUDE.md` only covers
-  marketplace-wide rules; read the plugin's own `CLAUDE.md` before editing
-  its code.
+  `.claude-plugin/plugin.json`, its own `README.md`, its own `CHANGELOG.md`,
+  and its own `CLAUDE.md` for language/tool-specific conventions. This root
+  `CLAUDE.md` only covers marketplace-wide rules; read the plugin's own
+  `CLAUDE.md` before editing its code.
 - To add a new plugin: create `plugins/<name>/.claude-plugin/plugin.json`,
   then add a matching entry to the root `marketplace.json` with
   `"source": "./plugins/<name>"`.
