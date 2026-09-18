@@ -70,3 +70,7 @@ marketplace.
 [1]: https://keepachangelog.com/en/1.1.0/
 [2]: https://semver.org/spec/v2.0.0.html
 [3]: https://no-color.org
+[1.2.0]: https://github.com/kierans/homers-drinking-bird/compare/dc2b0f56fd66...c2929824b0da
+[1.1.1]: https://github.com/kierans/homers-drinking-bird/compare/db61d80f7b37...dc2b0f56fd66
+[1.1.0]: https://github.com/kierans/homers-drinking-bird/compare/7242947750c8...db61d80f7b37
+[1.0.0]: https://github.com/kierans/homers-drinking-bird/commit/7242947750c8
